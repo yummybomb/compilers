@@ -22,7 +22,50 @@ let type_variable = ref (Char.code 'a')
    returns T(string) of the generated alphabet *)
 let gen_new_type () =
   let c1 = !type_variable in
-  incr type_variable; T(Char.escaped (Char.chr c1))
+  incr type_variable;
+  T(Char.escaped (Char.chr c1))
+;;
+
+let rec ftv_type (t: typeScheme): string list =
+  match t with
+  | TNum | TBool | TStr -> []
+  | T(x) -> [x]
+  | TFun(t1, t2) -> List.append (ftv_type t1) (ftv_type t2)
+  | TPoly(vars, t_inner) ->
+      let ftv_inner = ftv_type t_inner in
+      List.filter (fun x -> not (List.mem x vars)) ftv_inner
+;;
+
+let ftv_env (env: environment): string list =
+  List.fold_left (fun acc (_, t) ->
+    let ftv_t = ftv_type t in
+    List.append acc ftv_t
+  ) [] env
+;;
+
+let generalize (env: environment) (t: typeScheme): typeScheme =
+  let ftv_t = ftv_type t in
+  let ftv_env_vars = ftv_env env in
+  let vars = List.filter (fun x -> not (List.mem x ftv_env_vars)) ftv_t in
+  if vars = [] then
+    t
+  else
+    TPoly(vars, t)
+;;
+
+let instantiate (t: typeScheme): typeScheme =
+  match t with
+  | TPoly(vars, t_inner) ->
+      let subst = List.map (fun var -> (var, gen_new_type ())) vars in
+      let rec replace t =
+        match t with
+        | TNum | TBool | TStr -> t
+        | T(x) -> (try List.assoc x subst with Not_found -> t)
+        | TFun(t1, t2) -> TFun(replace t1, replace t2)
+        | TPoly(_, _) -> failwith "Nested TPoly not expected"
+      in
+      replace t_inner
+  | _ -> t
 ;;
 
 (*********************************************************************|
@@ -151,7 +194,7 @@ let rec gen (env: environment) (e: expr): aexpr * typeScheme * (typeScheme * typ
 let rec substitute (u: typeScheme) (x: string) (t: typeScheme) : typeScheme =
   match t with
   | TNum | TBool | TStr -> t
-  | T(c) -> if c = x then u else t
+  | T(y) -> if y = x then u else t
   | TFun(t1, t2) -> TFun(substitute u x t1, substitute u x t2)
   | TPoly(vars, t_inner) ->
       if List.mem x vars then
@@ -192,9 +235,11 @@ let rec occurs (x: string) (t: typeScheme) : bool =
   | TFun(t1, t2) -> occurs x t1 || occurs x t2
   | TPoly(vars, t_inner) ->
       not (List.mem x vars) && occurs x t_inner
+;;
 
 let substitute_in_constraints x t constraints =
   List.map (fun (l, r) -> (substitute t x l, substitute t x r)) constraints
+;;
   
 (******************************************************************|
 |***************************   Unify   ****************************|
@@ -214,22 +259,31 @@ let rec unify (constraints: (typeScheme * typeScheme) list) : substitutions =
   match constraints with
   | [] -> []
   | (t1, t2) :: rest ->
-    if t1 = t2 then
-      unify rest
-    else
-      match t1, t2 with
-      | T(x), t | t, T(x) ->
-          if occurs x t then
-            raise OccursCheckException
-          else
-            let rest' = substitute_in_constraints x t rest in
-            let subs = unify rest' in
-            let t' = apply subs t in
-            let subs' = (x, t') :: List.map (fun (y, u) -> (y, substitute t' x u)) subs in
-            subs'
-      | TFun(a1, b1), TFun(a2, b2) ->
-          unify ((a1, a2) :: (b1, b2) :: rest)
-      | _ -> raise TypeError
+      let t1 = match t1 with
+        | TPoly(_, _) -> instantiate t1
+        | _ -> t1
+      in
+      let t2 = match t2 with
+        | TPoly(_, _) -> instantiate t2
+        | _ -> t2
+      in
+      if t1 = t2 then
+        unify rest
+      else
+        match t1, t2 with
+        | T(x), t | t, T(x) ->
+            if occurs x t then
+              raise OccursCheckException
+            else
+              let rest' = substitute_in_constraints x t rest in
+              let subs = unify rest' in
+              let t' = apply subs t in
+              let subs' = (x, t') :: List.map (fun (y, u) -> (y, substitute t' x u)) subs in
+              subs'
+        | TFun(a1, b1), TFun(a2, b2) ->
+            unify ((a1, a2) :: (b1, b2) :: rest)
+        | _ -> raise TypeError
+;;
 
 
 (* applies a final set of substitutions on the annotated expr *)
@@ -249,15 +303,81 @@ let rec apply_expr (subs: substitutions) (ae: aexpr): aexpr =
 
 (* 1. annotate expression with placeholder types and generate constraints
    2. unify types based on constraints *)
-let infer (e: expr) : typeScheme =
-  let env = [] in
-  let ae, t, constraints = gen env e in
-  (*let _ = print_string "\n"; print_string (string_of_constraints constraints) in
-  let _ = print_string "\n"; print_string (string_of_aexpr ae) in *)
-  let subs = unify constraints in
-  (* let _ = print_string "\n"; print_string (string_of_subs subs) in *)
-  (* reset the type counter after completing inference *)
-  type_variable := (Char.code 'a');
-  (* apply_expr subs annotated_expr *)
-  apply subs t
-;;
+   let infer (e: expr): typeScheme =
+    let rec infer_expr (env: environment) (e: expr): aexpr * typeScheme * (typeScheme * typeScheme) list =
+      match e with
+      | Int n -> AInt(n, TNum), TNum, []
+      | Bool b -> ABool(b, TBool), TBool, []
+      | String s -> AString(s, TStr), TStr, []
+      | ID x ->
+          if List.mem_assoc x env then
+            let t = List.assoc x env in
+            let inst_ty = instantiate t in
+            AID(x, inst_ty), inst_ty, []
+          else
+            raise UndefinedVar
+      | Fun(id, e) ->
+          let tid = gen_new_type () in
+          let env' = (id, tid)::env in
+          let ae, t_body, constraints = infer_expr env' e in
+          AFun(id, ae, TFun(tid, t_body)), TFun(tid, t_body), constraints
+      | Let(id, false, e1, e2) ->
+          let ae1, t1, constraints1 = infer_expr env e1 in
+          let subs1 = unify constraints1 in
+          let t1' = apply subs1 t1 in
+          let env_subst = List.map (fun (v, t) -> (v, apply subs1 t)) env in
+          let gen_t1 = generalize env_subst t1' in
+          let env' = (id, gen_t1)::env_subst in
+          let ae2, t2, constraints2 = infer_expr env' e2 in
+          let constraints2' = List.map (fun (l, r) -> (apply subs1 l, apply subs1 r)) constraints2 in
+          let subs2 = unify constraints2' in
+          let t2' = apply subs2 t2 in
+          ALet(id, false, ae1, ae2, t2'), t2', []
+      | Let(id, true, e1, e2) ->
+          let tid = gen_new_type () in
+          let env' = (id, tid)::env in
+          let ae1, t1, constraints1 = infer_expr env' e1 in
+          let subs1 = unify constraints1 in
+          let t1' = apply subs1 t1 in
+          let env_subst = List.map (fun (v, t) -> (v, apply subs1 t)) env in
+          let gen_t1 = generalize env_subst t1' in
+          let env'' = (id, gen_t1)::env_subst in
+          let ae2, t2, constraints2 = infer_expr env'' e2 in
+          let constraints2' = List.map (fun (l, r) -> (apply subs1 l, apply subs1 r)) constraints2 in
+          let subs2 = unify constraints2' in
+          let t2' = apply subs2 t2 in
+          ALet(id, true, ae1, ae2, t2'), t2', []
+      | Not e ->
+          let ae, t1, constraints = infer_expr env e in
+          let constraints' = (t1, TBool)::constraints in
+          ANot(ae, TBool), TBool, constraints'
+      | Binop(op, e1, e2) ->
+          let ae1, t1, constraints1 = infer_expr env e1 in
+          let ae2, t2, constraints2 = infer_expr env e2 in
+          let opc, t = match op with
+            | Add | Sub | Mult | Div -> [(t1, TNum); (t2, TNum)], TNum
+            | Concat -> [(t1, TStr); (t2, TStr)], TStr
+            | Greater | Less | GreaterEqual | LessEqual | Equal | NotEqual -> [(t1, t2)], TBool
+            | And | Or -> [(t1, TBool); (t2, TBool)], TBool
+          in
+          let constraints = constraints1 @ constraints2 @ opc in
+          ABinop(op, ae1, ae2, t), t, constraints
+      | If(e1, e2, e3) ->
+          let ae1, t1, constraints1 = infer_expr env e1 in
+          let ae2, t2, constraints2 = infer_expr env e2 in
+          let ae3, t3, constraints3 = infer_expr env e3 in
+          let constraints = constraints1 @ constraints2 @ constraints3 @ [(t1, TBool); (t2, t3)] in
+          AIf(ae1, ae2, ae3, t2), t2, constraints
+      | FunctionCall(fn, arg) ->
+          let afn, t_fn, constraints_fn = infer_expr env fn in
+          let aarg, t_arg, constraints_arg = infer_expr env arg in
+          let t_res = gen_new_type () in
+          let constraints = constraints_fn @ constraints_arg @ [(t_fn, TFun(t_arg, t_res))] in
+          AFunctionCall(afn, aarg, t_res), t_res, constraints
+    in
+    let ae, t, constraints = infer_expr [] e in
+    let subs = unify constraints in
+    let t_final = apply subs t in
+    type_variable := (Char.code 'a');  (* Reset type variable counter *)
+    t_final
+  ;;
