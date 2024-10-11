@@ -198,6 +198,7 @@ let public_poly_3 _ =
   (* 'a -> 'a *)
   let result = pp_string_of_type (TFun(a, a)) in
   let student = pp_string_of_type (infer prog) in
+
   assert (student = result)
 
 

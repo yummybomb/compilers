@@ -169,7 +169,6 @@ let pp_string_of_type (t: typeScheme) =
         let (st2, c2, m2) = aux t2 c1 m1 in
         Printf.sprintf "(%s -> %s)" st1 st2, c2, m2
     | TPoly(vars, t_inner) ->
-        (* Since OCaml doesn't explicitly show quantifiers in types, we can skip them for pretty-printing *)
         aux t_inner chr map
   in
   let (st, _, _) = aux t 97 [] in
