@@ -25,12 +25,6 @@ let gen_new_type () =
   incr type_variable; T(Char.escaped (Char.chr c1))
 ;;
 
-let string_of_constraints (constraints: (typeScheme * typeScheme) list) =
-  List.fold_left (fun acc (l, r) -> Printf.sprintf "%s%s = %s\n" acc (string_of_type l) (string_of_type r)) "" constraints
-
-let string_of_subs (subs: substitutions) =
-  List.fold_left (fun acc (s, t) -> Printf.sprintf "%s%s: %s\n" acc s (string_of_type t)) "" subs
-
 (*********************************************************************|
 |******************   Annotate Expressions   *************************|
 |*********************************************************************|
