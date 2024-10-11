@@ -44,28 +44,24 @@ let ftv_env (env: environment): string list =
 ;;
 
 let generalize (env: environment) (t: typeScheme): typeScheme =
-  let ftv_t = ftv_type t in
-  let ftv_env_vars = ftv_env env in
-  let vars = List.filter (fun x -> not (List.mem x ftv_env_vars)) ftv_t in
-  if vars = [] then
-    t
-  else
-    TPoly(vars, t)
+  let env_vars = ftv_env env in
+  let t_vars = ftv_type t in
+  let vars = List.filter (fun x -> not (List.mem x env_vars)) t_vars in
+  if vars = [] then t else TPoly(vars, t)
 ;;
 
+
 let instantiate (t: typeScheme): typeScheme =
-  match t with
-  | TPoly(vars, t_inner) ->
-      let subst = List.map (fun var -> (var, gen_new_type ())) vars in
-      let rec replace t =
-        match t with
-        | TNum | TBool | TStr -> t
-        | T(x) -> (try List.assoc x subst with Not_found -> t)
-        | TFun(t1, t2) -> TFun(replace t1, replace t2)
-        | TPoly(_, _) -> failwith "Nested TPoly not expected"
-      in
-      replace t_inner
-  | _ -> t
+  let rec inst subst t =
+    match t with
+    | TNum | TBool | TStr -> t
+    | T x -> (try List.assoc x subst with Not_found -> t)
+    | TFun(t1, t2) -> TFun(inst subst t1, inst subst t2)
+    | TPoly(vars, t_inner) ->
+        let subst = List.fold_left (fun acc var -> (var, gen_new_type ())::acc) subst vars in
+        inst subst t_inner
+  in
+  inst [] t
 ;;
 
 (*********************************************************************|
@@ -312,8 +308,8 @@ let rec apply_expr (subs: substitutions) (ae: aexpr): aexpr =
       | ID x ->
           if List.mem_assoc x env then
             let t = List.assoc x env in
-            let inst_ty = instantiate t in
-            AID(x, inst_ty), inst_ty, []
+            let inst_t = instantiate t in
+            AID(x, inst_t), inst_t, []
           else
             raise UndefinedVar
       | Fun(id, e) ->
