@@ -1,4 +1,8 @@
-type t
+(* puzzle/puzzle.mli *)
+type t = {
+  k: int;
+  board: int array array;
+}
 
 exception ParseError of string
 

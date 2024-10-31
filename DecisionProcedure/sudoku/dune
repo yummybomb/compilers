@@ -24,10 +24,7 @@
   (with-stdin-from test.input
     (run ./sudoku.exe))))
 
-
-
 ; Uncomment these tests when you have something ready to try.
-
  (rule
   (alias runtest)
   (action (diff test-small.expected test-small.output)))
