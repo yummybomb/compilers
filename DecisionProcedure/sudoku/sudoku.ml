@@ -89,7 +89,7 @@ let () =
   Z3.raw_send z3 "(check-sat)";
   let result = match Z3.raw_read_line z3 with
   | "unsat" -> 
-      print_string ("unsat");
+      print_endline ("unsat");
       `Unsat
   | "sat" ->
       (* Get the first solution *)

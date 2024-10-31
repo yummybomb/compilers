@@ -42,6 +42,7 @@ let show p =
       if j > 0 then Buffer.add_char buf ' ';
       Buffer.add_string buf (string_of_int p.board.(i).(j))
     done;
+    Buffer.add_char buf ' ';
     Buffer.add_char buf '\n'
   done;
   Buffer.contents buf
