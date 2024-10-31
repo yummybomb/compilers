@@ -1,0 +1,21 @@
+Since Sudoku is all about filling a 9x9 grid with numbers 1 through 9 without repeating any number in a row, column, or 3x3 box, it can be seen as a constraint satisfaction problem. In this CDCL-inspired strategy, each cell in the Sudoku grid is a variable, and the possible numbers (1-9) are the domains of these variables. The constraints are the usual Sudoku rules that prevent duplicate numbers in rows, columns, and boxes.
+
+Initialization: I start by setting up the grid. For every empty cell, I assign it all possible digits (1-9) as its domain. Cells that are already filled have a fixed value.
+
+Propagation: Next, I use constraint propagation. If a cell can only be one number because of the existing numbers in its row, column, or box, I assign that number to it. Then, I eliminate that number from the domains of all related cells. I keep doing this until I can't make any more straightforward deductions.
+
+Decision Making: When I can't proceed through propagation alone, I make a decision. I pick an unassigned cell with the smallest number of possible digits (making it the most constrained) and tentatively assign one of those digits to it.
+
+Conflict Detection: Sometimes, this leads to a conflict where a cell ends up with an empty domain—meaning there's no valid number that can go there without breaking the rules.
+
+Conflict Analysis and Learning: When a conflict happens, I analyze it to figure out which assignments led to it. By tracing back through my decisions and the propagations that followed, I identify the combination of assignments that can't all be true at the same time. I then learn a new constraint that prevents this combination from occurring again.
+
+Non-Chronological Backtracking: Instead of backtracking step by step, I jump back to the point where the conflicting decision was made. (non-chronological backtracking). By doing this, I avoid revisiting irrelevant decisions that didn't contribute to the conflict.
+
+Continuation: With the new constraint in place, I adjust the domains of the affected cells and resume the propagation and decision-making process.
+
+Example: For instance, suppose I assign the number 4 to a cell, and after some propagation, I find that another cell has no possible numbers left. By analyzing the conflict, I might discover that assigning 4 to both of these cells is the issue. So, I learn a new constraint that at least one of these cells cannot be 4. I add this constraint, backtrack to the decision where I assigned the 4, and proceed with the updated information.
+
+Benefits: This approach improves efficiency by learning from conflicts and preventing the same mistakes. Non-chronological backtracking saves time by not revisiting decisions that aren't related to the conflict. Overall, it makes solving Sudoku puzzles, especially the more challenging ones, more effective.
+
+In conclusion, by borrowing concepts from the CDCL algorithm, like conflict analysis and intelligent backtracking, this strategy enhances the traditional methods of solving Sudoku. It helps focus on the critical decisions and avoids unnecessary computations, leading to a quicker and more robust solution.
