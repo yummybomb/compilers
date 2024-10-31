@@ -45,3 +45,18 @@ let show p =
     Buffer.add_char buf '\n'
   done;
   Buffer.contents buf
+
+let%test_module _ =
+  (module struct
+     let p = from_channel (Scanf.Scanning.from_string
+                             "2\n1 2 3 4\n3 4 1 2\n2 1 4 3\n4 3 2 1\n")
+     let%expect_test _ =
+       print_endline (show p);
+       [%expect{|
+         2
+         1 2 3 4
+         3 4 1 2
+         2 1 4 3
+         4 3 2 1
+       |}]
+   end)
